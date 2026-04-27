@@ -5,10 +5,12 @@ import ssl
 import os
 import traceback
 import urllib.parse
+import json
+import subprocess
 from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                              QLineEdit, QLabel, QFileDialog, QGroupBox, QTextBrowser, 
                              QProgressBar, QComboBox, QMessageBox, QSplashScreen, QTabWidget)
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont, QIcon, QPixmap
 from qasync import QEventLoop, asyncSlot
 
@@ -20,8 +22,12 @@ try:
 except ImportError as e:
     print(f"HATA: Bazı modül dosyaları bulunamadı! {e}")
 
+# --- GÜNCELLEME AYARLARI ---
+MEVCUT_SURUM = "1.0.0"
+SURUM_KONTROL_URL = "BURAYA_RAW_LINKINI_YAPISTIR" # ÖRN: https://raw.githubusercontent.com/.../version.json
+
 # ==========================================
-# EXE UYUMLULUĞU İÇİR DOSYA YOLU BULUCU
+# EXE UYUMLULUĞU İÇİN DOSYA YOLU BULUCU
 # ==========================================
 def resource_path(relative_path):
     """ PyInstaller ile paketlendiğinde dosyaların geçici dizinden okunmasını sağlar. """
@@ -121,7 +127,7 @@ class DVNM_OSINT_Uygulama(QWidget):
             <b>4. INSTAGRAM GÜVENLİK:</b><br>
             Sahte/Bot hesabınızın banlanmaması için ardışık ve aşırı sorgudan kaçının.<br><br>
             <hr>
-            <i>DVNM OSINT v1.6 - Dark Edition</i>
+            <i>DVNM OSINT v1.0.0 - Dark Edition</i>
         """)
 
         bottom_horizontal_layout.addWidget(self.result_area, 7)
@@ -236,8 +242,32 @@ class DVNM_OSINT_Uygulama(QWidget):
             QMessageBox.information(self, "Başarılı", "Rapor kaydedildi.")
 
 # ==========================================
-# ÇALIŞTIRMA VE SPLASH EKRANI KISMI
+# GÜNCELLEME KONTROLÜ VE SPLASH EKRANI
 # ==========================================
+async def baslangic_kontrolu(splash, ana_uygulama):
+    # 1. Arka planda sunucudan sürüm kontrolü yap
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(SURUM_KONTROL_URL, timeout=3) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    sunucu_surumu = data.get("version", "1.0.0")
+                    indirme_linki = data.get("url", "")
+                    
+                    if sunucu_surumu > MEVCUT_SURUM:
+                        print(f"[!] Yeni sürüm bulundu: {sunucu_surumu}")
+                        # Güncelleyici arayüzünü (updater.exe) tetikle ve ana programı kapat
+                        subprocess.Popen(["updater.exe", indirme_linki, "dvnm_osint.exe"])
+                        sys.exit()
+    except Exception as e:
+        print(f"[-] Güncelleme kontrolü atlandı (İnternet yok veya sunucu yanıt vermiyor).")
+
+    # 2. Eğer güncelleme yoksa, 3 saniye splash ekranını göster ve uygulamaya geç
+    await asyncio.sleep(3)
+    if splash is not None:
+        splash.finish(ana_uygulama)
+    ana_uygulama.show()
+
 if __name__ == '__main__':
     try:
         app = QApplication(sys.argv)
@@ -250,17 +280,13 @@ if __name__ == '__main__':
         if os.path.exists(splash_path):
             splash = QSplashScreen(QPixmap(splash_path).scaled(400, 400, Qt.KeepAspectRatio, Qt.SmoothTransformation), Qt.WindowStaysOnTopHint)
             splash.setFont(QFont("Segoe UI", 12, QFont.Bold))
-            splash.showMessage("DVNM OSINT Yükleniyor...", Qt.AlignBottom | Qt.AlignCenter, Qt.white)
+            splash.showMessage(f"DVNM OSINT v{MEVCUT_SURUM} Yükleniyor...", Qt.AlignBottom | Qt.AlignCenter, Qt.white)
             splash.show()
         
         dvnm = DVNM_OSINT_Uygulama()
         
-        def show_main_window():
-            if splash is not None:
-                splash.finish(dvnm)
-            dvnm.show()
-            
-        QTimer.singleShot(3000, show_main_window)
+        # Başlangıç görevini (Update kontrolü + Splash ekranı beklemesi) tetikle
+        loop.create_task(baslangic_kontrolu(splash, dvnm))
         
         with loop:
             loop.run_forever()
