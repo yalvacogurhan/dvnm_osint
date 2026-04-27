@@ -51,7 +51,7 @@ class DVNM_OSINT_Uygulama(QWidget):
         # --- GÜNCELLEME DEĞİŞKENLERİ ---
         self.CURRENT_VERSION = "1.6"
         # DİKKAT: BURAYA KENDİ GITHUB RAW LİNKİNİ YAPIŞTIR
-        self.UPDATE_JSON_URL = "https://raw.githubusercontent.com/KULLANICI_ADIN/REPO_ADIN/main/version.json" 
+        self.UPDATE_JSON_URL = "https://raw.githubusercontent.com/yalvacogurhan/dvnm_osint/refs/heads/main/DVNM%20OSINT/version.json" 
 
         # --- GLOBAL STYLESHEET (Dark & Green Theme) ---
         self.setStyleSheet("""
