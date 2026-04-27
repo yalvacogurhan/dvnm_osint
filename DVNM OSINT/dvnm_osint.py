@@ -6,11 +6,11 @@ import os
 import traceback
 import urllib.parse
 import json
-import subprocess
+import aiofiles # Güncelleme indirmek için eklendi
 from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                              QLineEdit, QLabel, QFileDialog, QGroupBox, QTextBrowser, 
                              QProgressBar, QComboBox, QMessageBox, QSplashScreen, QTabWidget)
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont, QIcon, QPixmap
 from qasync import QEventLoop, asyncSlot
 
@@ -22,12 +22,8 @@ try:
 except ImportError as e:
     print(f"HATA: Bazı modül dosyaları bulunamadı! {e}")
 
-# --- GÜNCELLEME AYARLARI ---
-MEVCUT_SURUM = "1.0.0"
-SURUM_KONTROL_URL = "https://raw.githubusercontent.com/yalvacogurhan/dvnm_osint/refs/heads/main/DVNM%20OSINT/version.json" # ÖRN: https://raw.githubusercontent.com/.../version.json
-
 # ==========================================
-# EXE UYUMLULUĞU İÇİN DOSYA YOLU BULUCU
+# EXE UYUMLULUĞU İÇİR DOSYA YOLU BULUCU
 # ==========================================
 def resource_path(relative_path):
     """ PyInstaller ile paketlendiğinde dosyaların geçici dizinden okunmasını sağlar. """
@@ -52,6 +48,11 @@ class DVNM_OSINT_Uygulama(QWidget):
         self.initUI()
 
     def initUI(self):
+        # --- GÜNCELLEME DEĞİŞKENLERİ ---
+        self.CURRENT_VERSION = "1.6"
+        # DİKKAT: BURAYA KENDİ GITHUB RAW LİNKİNİ YAPIŞTIR
+        self.UPDATE_JSON_URL = "https://raw.githubusercontent.com/KULLANICI_ADIN/REPO_ADIN/main/version.json" 
+
         # --- GLOBAL STYLESHEET (Dark & Green Theme) ---
         self.setStyleSheet("""
             QWidget { background-color: #121212; color: #e0e0e0; font-family: 'Segoe UI', Arial; }
@@ -127,7 +128,7 @@ class DVNM_OSINT_Uygulama(QWidget):
             <b>4. INSTAGRAM GÜVENLİK:</b><br>
             Sahte/Bot hesabınızın banlanmaması için ardışık ve aşırı sorgudan kaçının.<br><br>
             <hr>
-            <i>DVNM OSINT v1.0.0 - Dark Edition</i>
+            <i>DVNM OSINT v1.6 - Dark Edition</i>
         """)
 
         bottom_horizontal_layout.addWidget(self.result_area, 7)
@@ -140,12 +141,23 @@ class DVNM_OSINT_Uygulama(QWidget):
         standart_layout.addLayout(bottom_horizontal_layout)
         standart_tarama_sekmesi.setLayout(standart_layout)
 
+        # --- 5. SEKME: GÜNCELLEME VE SİSTEM ---
+        self.update_sekmesi = QWidget()
+        self.setup_update_tab()
+
         # --- SEKME YÖNETİCİSİ (TAB WIDGET) ---
         self.tabs = QTabWidget()
         self.tabs.addTab(standart_tarama_sekmesi, "Çoklu Dork/Hızlı Tarama")
-        self.tabs.addTab(InstagramDerinAnaliz(), "Instagram Derin Analiz")
-        self.tabs.addTab(ExifKonumAnalizi(), "EXIF (Konum Çıkarıcı)")
-        self.tabs.addTab(VisualImageSearch(), "Görsel Eşleştirme (Dedektif)")
+        
+        # Eğer modüller yoksa uygulama çökmesin diye dummy widget eklenebilir ama orijinalinde var sayıyoruz
+        try:
+            self.tabs.addTab(InstagramDerinAnaliz(), "Instagram Derin Analiz")
+            self.tabs.addTab(ExifKonumAnalizi(), "EXIF (Konum Çıkarıcı)")
+            self.tabs.addTab(VisualImageSearch(), "Görsel Eşleştirme (Dedektif)")
+        except NameError:
+            pass # Modüller yüklenemediyse atla
+            
+        self.tabs.addTab(self.update_sekmesi, "⚙️ Sistem & Güncelleme")
 
         # Ana Layout
         main_layout = QVBoxLayout()
@@ -153,6 +165,123 @@ class DVNM_OSINT_Uygulama(QWidget):
         self.setLayout(main_layout)
         self.setFixedSize(850, 750)
 
+    # ==========================================
+    # GÜNCELLEME SİSTEMİ FONKSİYONLARI
+    # ==========================================
+    def setup_update_tab(self):
+        layout = QVBoxLayout()
+        
+        # Bilgi Paneli
+        info_group = QGroupBox("Sistem ve Sürüm Bilgisi")
+        info_layout = QVBoxLayout()
+        self.lbl_current_version = QLabel(f"Mevcut Sürüm: v{self.CURRENT_VERSION}")
+        self.lbl_current_version.setStyleSheet("font-size: 14px; color: #1db954; font-weight: bold;")
+        self.lbl_new_version = QLabel("Durum: Güncel")
+        self.lbl_new_version.setStyleSheet("font-size: 14px; color: #e0e0e0;")
+        
+        info_layout.addWidget(self.lbl_current_version)
+        info_layout.addWidget(self.lbl_new_version)
+        info_group.setLayout(info_layout)
+        
+        # Sürüm Notları Alanı
+        self.changelog_area = QTextBrowser()
+        self.changelog_area.setPlaceholderText("Güncelleme kontrolü bekleniyor...")
+        
+        # İndirme Çubuğu
+        self.update_progress = QProgressBar()
+        self.update_progress.hide() # Başlangıçta gizli
+        
+        # Butonlar
+        btn_layout = QHBoxLayout()
+        self.btn_check_update = QPushButton("🔄 Güncellemeleri Kontrol Et")
+        self.btn_check_update.clicked.connect(self.start_check_update)
+        
+        self.btn_download_update = QPushButton("⬇️ Yeni Sürümü İndir")
+        self.btn_download_update.setEnabled(False)
+        self.btn_download_update.clicked.connect(self.start_download_update)
+        
+        btn_layout.addWidget(self.btn_check_update)
+        btn_layout.addWidget(self.btn_download_update)
+        
+        # Layout birleştirme
+        layout.addWidget(info_group)
+        layout.addWidget(QLabel("📝 Sürüm Notları:"))
+        layout.addWidget(self.changelog_area)
+        layout.addWidget(self.update_progress)
+        layout.addLayout(btn_layout)
+        
+        self.update_sekmesi.setLayout(layout)
+
+    @asyncSlot()
+    async def start_check_update(self):
+        self.btn_check_update.setEnabled(False)
+        self.btn_check_update.setText("Kontrol Ediliyor...")
+        self.changelog_area.setText("Sunucuya bağlanılıyor...")
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(self.UPDATE_JSON_URL, timeout=5) as response:
+                    if response.status == 200:
+                        data = await response.json(content_type=None)
+                        remote_version = data.get("version")
+                        self.download_url = data.get("url")
+                        changelog = data.get("changelog", "Sürüm notu bulunamadı.")
+                        
+                        if float(remote_version) > float(self.CURRENT_VERSION):
+                            self.lbl_new_version.setText(f"Durum: Yeni sürüm bulundu! (v{remote_version})")
+                            self.lbl_new_version.setStyleSheet("font-size: 14px; color: #f39c12; font-weight: bold;")
+                            self.changelog_area.setHtml(f"<b style='color:#1db954;'>YENİLİKLER v{remote_version}:</b><br><br>{changelog}")
+                            self.btn_download_update.setEnabled(True)
+                        else:
+                            self.lbl_new_version.setText("Durum: En güncel sürümü kullanıyorsunuz.")
+                            self.changelog_area.setText("Sisteminiz güncel. Herhangi bir aksiyona gerek yok.")
+                    else:
+                        self.changelog_area.setText(f"Bağlantı hatası: Sunucu {response.status} döndürdü.")
+        except Exception as e:
+            self.changelog_area.setText(f"Güncelleme sunucusuna ulaşılamadı.\nHata: {str(e)}\n\n(Eğer JSON linkini henüz ayarlamadıysanız bu hatayı alırsınız.)")
+            
+        self.btn_check_update.setEnabled(True)
+        self.btn_check_update.setText("🔄 Güncellemeleri Kontrol Et")
+
+    @asyncSlot()
+    async def start_download_update(self):
+        if not hasattr(self, 'download_url'): return
+        
+        save_path, _ = QFileDialog.getSaveFileName(self, "Yeni Sürümü Kaydet", f"DVNM_OSINT_Guncel.exe", "Executable (*.exe)")
+        if not save_path: return
+
+        self.btn_download_update.setEnabled(False)
+        self.update_progress.show()
+        self.update_progress.setValue(0)
+        self.changelog_area.append("<br><span style='color:#f39c12;'>İndirme başlatılıyor... Lütfen bekleyin.</span>")
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(self.download_url) as response:
+                    if response.status == 200:
+                        total_size = int(response.headers.get('content-length', 0))
+                        downloaded_size = 0
+                        
+                        async with aiofiles.open(save_path, 'wb') as f:
+                            async for chunk in response.content.iter_chunked(1024 * 64): 
+                                await f.write(chunk)
+                                downloaded_size += len(chunk)
+                                if total_size:
+                                    percent = int((downloaded_size / total_size) * 100)
+                                    self.update_progress.setValue(percent)
+                                    
+                        self.changelog_area.append(f"<br><span style='color:#1db954;'>✅ İndirme tamamlandı!</span><br>Yeni dosya: {save_path}<br><b>Lütfen mevcut uygulamayı kapatıp, yeni indirdiğiniz dosyayı çalıştırın.</b>")
+                        QMessageBox.information(self, "Başarılı", "Yeni sürüm başarıyla indirildi. Uygulamayı kapatıp yeni sürümü başlatabilirsiniz.")
+                    else:
+                        self.changelog_area.append(f"<br>İndirme başarısız! HTTP Kod: {response.status}")
+        except Exception as e:
+            self.changelog_area.append(f"<br><span style='color:#ff3333;'>İndirme sırasında hata oluştu: {str(e)}</span>")
+            
+        self.btn_download_update.setEnabled(True)
+
+    # ==========================================
+    # TARAMA FONKSİYONLARI
+    # ==========================================
     @asyncSlot()
     async def search_username(self):
         raw_input = self.username_input.text().strip()
@@ -242,32 +371,8 @@ class DVNM_OSINT_Uygulama(QWidget):
             QMessageBox.information(self, "Başarılı", "Rapor kaydedildi.")
 
 # ==========================================
-# GÜNCELLEME KONTROLÜ VE SPLASH EKRANI
+# ÇALIŞTIRMA VE SPLASH EKRANI KISMI
 # ==========================================
-async def baslangic_kontrolu(splash, ana_uygulama):
-    # 1. Arka planda sunucudan sürüm kontrolü yap
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(SURUM_KONTROL_URL, timeout=3) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    sunucu_surumu = data.get("version", "1.0.0")
-                    indirme_linki = data.get("url", "")
-                    
-                    if sunucu_surumu > MEVCUT_SURUM:
-                        print(f"[!] Yeni sürüm bulundu: {sunucu_surumu}")
-                        # Güncelleyici arayüzünü (updater.exe) tetikle ve ana programı kapat
-                        subprocess.Popen(["updater.exe", indirme_linki, "dvnm_osint.exe"])
-                        sys.exit()
-    except Exception as e:
-        print(f"[-] Güncelleme kontrolü atlandı (İnternet yok veya sunucu yanıt vermiyor).")
-
-    # 2. Eğer güncelleme yoksa, 3 saniye splash ekranını göster ve uygulamaya geç
-    await asyncio.sleep(3)
-    if splash is not None:
-        splash.finish(ana_uygulama)
-    ana_uygulama.show()
-
 if __name__ == '__main__':
     try:
         app = QApplication(sys.argv)
@@ -280,13 +385,17 @@ if __name__ == '__main__':
         if os.path.exists(splash_path):
             splash = QSplashScreen(QPixmap(splash_path).scaled(400, 400, Qt.KeepAspectRatio, Qt.SmoothTransformation), Qt.WindowStaysOnTopHint)
             splash.setFont(QFont("Segoe UI", 12, QFont.Bold))
-            splash.showMessage(f"DVNM OSINT v{MEVCUT_SURUM} Yükleniyor...", Qt.AlignBottom | Qt.AlignCenter, Qt.white)
+            splash.showMessage("DVNM OSINT Yükleniyor...", Qt.AlignBottom | Qt.AlignCenter, Qt.white)
             splash.show()
         
         dvnm = DVNM_OSINT_Uygulama()
         
-        # Başlangıç görevini (Update kontrolü + Splash ekranı beklemesi) tetikle
-        loop.create_task(baslangic_kontrolu(splash, dvnm))
+        def show_main_window():
+            if splash is not None:
+                splash.finish(dvnm)
+            dvnm.show()
+            
+        QTimer.singleShot(3000, show_main_window)
         
         with loop:
             loop.run_forever()
