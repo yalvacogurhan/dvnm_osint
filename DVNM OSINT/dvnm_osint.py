@@ -24,10 +24,7 @@ except ImportError as e:
 
 # --- GÜNCELLEME AYARLARI ---
 MEVCUT_SURUM = "1.0.0"
-SURUM_KONTROL_URL = "{
-  "version": "1.1.0",
-  "url": "https://github.com/yalvacogurhan/dvnm_osint/releases/download/1.1.0/dvnm_osint.exe"
-}" # ÖRN: https://raw.githubusercontent.com/.../version.json
+SURUM_KONTROL_URL = "https://raw.githubusercontent.com/yalvacogurhan/dvnm_osint/refs/heads/main/DVNM%20OSINT/version.json" # ÖRN: https://raw.githubusercontent.com/.../version.json
 
 # ==========================================
 # EXE UYUMLULUĞU İÇİN DOSYA YOLU BULUCU
