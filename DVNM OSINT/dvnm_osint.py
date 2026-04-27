@@ -49,7 +49,7 @@ class DVNM_OSINT_Uygulama(QWidget):
 
     def initUI(self):
         # --- GÜNCELLEME DEĞİŞKENLERİ ---
-        self.CURRENT_VERSION = "1.6"
+        self.CURRENT_VERSION = "1.0.0"
         # DİKKAT: BURAYA KENDİ GITHUB RAW LİNKİNİ YAPIŞTIR
         self.UPDATE_JSON_URL = "https://raw.githubusercontent.com/yalvacogurhan/dvnm_osint/refs/heads/main/DVNM%20OSINT/version.json" 
 
