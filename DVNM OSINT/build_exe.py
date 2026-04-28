@@ -13,6 +13,11 @@ print("="*60)
 print("\n[1] PyInstaller modülü kontrol ediliyor...")
 subprocess.run([gercek_python, "-m", "pip", "install", "pyinstaller"])
 
+# --- YENİ EKLENEN KISIM: AIOFILES KURULUM GARANTİSİ ---
+print("\n[1.5] aiofiles modülü kontrol ediliyor (Güncelleme sistemi için zorunlu)...")
+subprocess.run([gercek_python, "-m", "pip", "install", "aiofiles"])
+# -------------------------------------------------------
+
 print("\n[2] DVNM OSINT EXE dosyası derleniyor...")
 print("LÜTFEN DİKKAT: Windows Defender'ın gerçek zamanlı korumasını geçici olarak kapattığınızdan emin olun!\n")
 
@@ -29,16 +34,6 @@ derleme_komutu = [
 
 islem = subprocess.run(derleme_komutu)
 
-print("\n[3] Updater (Otomatik Güncelleyici) derleniyor...")
-updater_komutu = [
-    gercek_python, "-m", "PyInstaller",
-    "--noconfirm",
-    "--onefile",
-    "--windowed",
-    "updater.py"
-]
-subprocess.run(updater_komutu)
-
 if islem.returncode == 0:
     print("\n" + "="*60)
     print("[+] BAŞARILI! Uygulamanız hazır.")
@@ -47,5 +42,5 @@ if islem.returncode == 0:
     print("="*60)
 else:
     print("\n" + "="*60)
-    print("[!] HATA: Derleme başarısız.")
+    print("[!] HATA: Derleme başarısız. Lütfen Antivirüsünüzü kapattığınızdan emin olun.")
     print("="*60)
