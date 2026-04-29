@@ -509,28 +509,43 @@ class DVNM_OSINT_Uygulama(QWidget):
             QMessageBox.information(self, "Başarılı", "Rapor kaydedildi.")
 
 # ==========================================
-# ÇALIŞTIRMA KISMI (Buraya Dokunma)
+# ÇALIŞTIRMA KISMI (Supabase Yetkilendirme Entegreli)
 # ==========================================
 if __name__ == '__main__':
+    from auth_ekrani import LoginEkrani # Yazdığımız login ekranını içeri aktarıyoruz
+
     try:
         app = QApplication(sys.argv)
-        loop = QEventLoop(app)
-        asyncio.set_event_loop(loop)
+        # Uygulamanın son pencere kapandığında tamamen kapanmasını önlüyoruz
+        # Çünkü login ekranı kapanınca asıl uygulama açılacak.
+        app.setQuitOnLastWindowClosed(False) 
         
-        # 1. Ana uygulamayı yarat ama gösterme!
-        dvnm = DVNM_OSINT_Uygulama()
+        # 1. ÖNCE LOGIN EKRANINI GÖSTER
+        login_penceresi = LoginEkrani()
+        login_penceresi.show()
         
-        # 2. Splash (Açılış) Ekranını Yarat ve Göster
-        splash_path = resource_path("load.png")
-        splash = CustomSplashScreen(splash_path)
-        splash.show()
+        # Kullanıcı login penceresini kapatana kadar bekle
+        app.exec_() 
         
-        # 3. Arka plan kontrolünü (ve varsa indirmeyi) başlat
-        asyncio.ensure_future(check_startup_update(splash, dvnm))
-        
-        # 4. Döngüyü çalıştır
-        with loop:
-            loop.run_forever()
+        # 2. GİRİŞ BAŞARILIYSA ANA UYGULAMAYI BAŞLAT
+        if login_penceresi.giris_basarili:
+            app.setQuitOnLastWindowClosed(True) # Normale döndür
+            
+            loop = QEventLoop(app)
+            asyncio.set_event_loop(loop)
+            
+            dvnm = DVNM_OSINT_Uygulama()
+            splash_path = resource_path("load.png")
+            splash = CustomSplashScreen(splash_path)
+            splash.show()
+            
+            asyncio.ensure_future(check_startup_update(splash, dvnm))
+            
+            with loop:
+                loop.run_forever()
+        else:
+            print("\n[!] Giriş yapılmadı veya iptal edildi. Sistem kapatılıyor.")
+            sys.exit(0)
             
     except Exception as e:
         print("\n[!!!] KRİTİK BİR HATA YAKALANDI [!!!]")
