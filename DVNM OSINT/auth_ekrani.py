@@ -14,11 +14,11 @@ except Exception as e:
     print(f"Supabase bağlantı hatası: {e}")
     supabase = None
 
-# İŞTE BU SINIF (CLASS) ÇOK ÖNEMLİ! HATA BURAYI BULAMADIĞI İÇİN ÇIKIYOR.
 class LoginEkrani(QWidget):
     def __init__(self):
         super().__init__()
         self.giris_basarili = False
+        self.user_id = None  
         self.setWindowTitle("DVNM OSINT - Sistem Girişi")
         self.setFixedSize(350, 260)
         
@@ -71,8 +71,13 @@ class LoginEkrani(QWidget):
             QApplication.processEvents()
 
             response = supabase.auth.sign_in_with_password({"email": email, "password": password})
+            self.user_id = response.user.id  
             self.giris_basarili = True
+            
             self.close()
+            # YENİ EKLENEN KISIM: Uygulamaya "beklemeyi bırak ve devam et" diyoruz.
+            QApplication.instance().exit() 
+            
         except Exception as e:
             QMessageBox.warning(self, "Giriş Başarısız", "E-posta veya şifre hatalı!")
             self.btn_giris.setText("GİRİŞ YAP")
@@ -100,3 +105,8 @@ class LoginEkrani(QWidget):
         finally:
             self.btn_kayit.setText("YENİ KAYIT OL")
             self.btn_kayit.setEnabled(True)
+
+    # YENİ EKLENEN KISIM: Pencere "X" ile kapatılırsa arka planda askıda kalmasını engeller
+    def closeEvent(self, event):
+        QApplication.instance().exit()
+        event.accept()
