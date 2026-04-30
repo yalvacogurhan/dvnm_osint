@@ -15,6 +15,9 @@ from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont, QIcon, QPixmap
 from qasync import QEventLoop, asyncSlot
 
+# SUPABASE VE LOGIN EKRANINI İÇERİ AKTARIYORUZ
+from auth_ekrani import supabase, LoginEkrani
+
 # --- HARİCİ MODÜLLERİN İÇERİ AKTARILMASI ---
 try:
     from instagram_osint import InstagramDerinAnaliz
@@ -47,7 +50,6 @@ def create_and_run_updater(new_exe_path):
     
     bat_path = os.path.join(current_dir, "dvnm_updater.bat")
     
-    # 2 Saniye bekle -> Eski exe'yi sil -> Yenisinin adını eski yap -> Yenisini başlat -> Kendini sil
     bat_content = f"""@echo off
 timeout /t 2 /nobreak > NUL
 del "{current_name}"
@@ -58,7 +60,6 @@ del "%~f0"
     with open(bat_path, "w", encoding="utf-8") as f:
         f.write(bat_content)
         
-    # CMD penceresi tamamen görünmez (Gizli) olarak çalışsın
     kwargs = {}
     if os.name == 'nt':
         kwargs['creationflags'] = 0x08000000 
@@ -72,9 +73,8 @@ del "%~f0"
 class CustomSplashScreen(QWidget):
     def __init__(self, image_path):
         super().__init__()
-        # Çerçevesiz, görev çubuğunda görünmeyen ve hep üstte kalan ekran
         self.setWindowFlags(Qt.SplashScreen | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
-        self.setAttribute(Qt.WA_TranslucentBackground) # Arka planı şeffaf yapar
+        self.setAttribute(Qt.WA_TranslucentBackground)
         
         layout = QVBoxLayout()
         layout.setAlignment(Qt.AlignCenter)
@@ -90,7 +90,6 @@ class CustomSplashScreen(QWidget):
         self.info_label.setAlignment(Qt.AlignCenter)
         
         self.progress_bar = QProgressBar()
-        # Senin istediğin "Siyah (şeffaf) arka planlı, kalın beyaz detaylı" bar tasarımı
         self.progress_bar.setStyleSheet("""
             QProgressBar {
                 border: 2px solid #ffffff;
@@ -106,7 +105,7 @@ class CustomSplashScreen(QWidget):
                 border-radius: 3px;
             }
         """)
-        self.progress_bar.hide() # Başlangıçta gizli
+        self.progress_bar.hide()
         
         layout.addWidget(self.bg_label)
         layout.addWidget(self.info_label)
@@ -129,7 +128,6 @@ async def check_startup_update(splash, app_instance):
                     remote_v_tuple = tuple(map(int, remote_version.replace('v', '').split('.')))
                     current_v_tuple = tuple(map(int, app_instance.CURRENT_VERSION.replace('v', '').split('.')))
                     
-                    # YENİ SÜRÜM VARSA OTOMATİK İNDİR VE KUR
                     if remote_v_tuple > current_v_tuple:
                         splash.info_label.setText(f"Yeni Sürüm (v{remote_version}) İndiriliyor...")
                         splash.progress_bar.show()
@@ -156,15 +154,14 @@ async def check_startup_update(splash, app_instance):
                                 await asyncio.sleep(2)
                                 
                                 if getattr(sys, 'frozen', False):
-                                    create_and_run_updater(save_path) # Bat dosyasını çalıştır ve çık!
+                                    create_and_run_updater(save_path)
                                     return
                                 else:
                                     splash.info_label.setText("IDE Modu: Güncelleme Atlandı.")
                                     await asyncio.sleep(1)
     except Exception:
-        pass # Hata olursa sessizce uygulamayı açmaya devam et
+        pass 
         
-    # GÜNCELLEME YOKSA VEYA BİTTİYSE UYGULAMAYI AÇ
     splash.info_label.setText("DVNM OSINT Başlatılıyor...")
     await asyncio.sleep(1)
     splash.close()
@@ -177,6 +174,7 @@ class DVNM_OSINT_Uygulama(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("DVNM OSINT - Dark Edition")
+        self.current_user_id = None # KULLANICI ID'SI BURADA TUTULACAK
         
         icon_path = resource_path("dvnm_icon.ico")
         if os.path.exists(icon_path):
@@ -184,12 +182,25 @@ class DVNM_OSINT_Uygulama(QWidget):
         
         self.initUI()
 
+    # YENİ: VERİTABANINA KAYIT FONKSİYONU
+    async def veriyi_buluta_kaydet(self, hedef_ad, sonuc_metni, user_id):
+        if not supabase:
+            return
+        try:
+            data = {
+                "hedef_kullanici": hedef_ad,
+                "sonuclar": sonuc_metni,
+                "yapan_kullanici_id": user_id
+            }
+            supabase.table("taramalar").insert(data).execute()
+            print(f"[+] '{hedef_ad}' verisi buluta başarıyla işlendi.")
+        except Exception as e:
+            print(f"[-] Buluta kayıt hatası: {e}")
+
     def initUI(self):
-        # --- GÜNCELLEME DEĞİŞKENLERİ ---
-        self.CURRENT_VERSION = "1.0.0" # Test için 1.0.0
+        self.CURRENT_VERSION = "1.0.0"
         self.UPDATE_JSON_URL = "https://raw.githubusercontent.com/yalvacogurhan/dvnm_osint/main/DVNM%20OSINT/version.json"
 
-        # --- GLOBAL STYLESHEET (Dark & Green Theme) ---
         self.setStyleSheet("""
             QWidget { background-color: #121212; color: #e0e0e0; font-family: 'Segoe UI', Arial; }
             QGroupBox { border: 2px solid #1db954; border-radius: 8px; margin-top: 15px; padding: 10px; font-weight: bold; color: #1db954; }
@@ -206,7 +217,6 @@ class DVNM_OSINT_Uygulama(QWidget):
             QTabWidget::pane { border: 1px solid #333; }
         """)
 
-        # --- 1. SEKME: STANDART TARAMA (DORK / API) ---
         standart_tarama_sekmesi = QWidget()
         standart_layout = QVBoxLayout()
 
@@ -242,7 +252,6 @@ class DVNM_OSINT_Uygulama(QWidget):
 
         self.progress_bar = QProgressBar()
 
-        # Alt Panel Yerleşimi
         bottom_horizontal_layout = QHBoxLayout()
         self.result_area = QTextBrowser()
         self.result_area.setOpenExternalLinks(True)
@@ -274,11 +283,9 @@ class DVNM_OSINT_Uygulama(QWidget):
         standart_layout.addLayout(bottom_horizontal_layout)
         standart_tarama_sekmesi.setLayout(standart_layout)
 
-        # --- 5. SEKME: GÜNCELLEME VE SİSTEM ---
         self.update_sekmesi = QWidget()
         self.setup_update_tab()
 
-        # --- SEKME YÖNETİCİSİ (TAB WIDGET) ---
         self.tabs = QTabWidget()
         self.tabs.addTab(standart_tarama_sekmesi, "Çoklu Dork/Hızlı Tarama")
         
@@ -291,15 +298,11 @@ class DVNM_OSINT_Uygulama(QWidget):
             
         self.tabs.addTab(self.update_sekmesi, "⚙️ Sistem & Güncelleme")
 
-        # Ana Layout
         main_layout = QVBoxLayout()
         main_layout.addWidget(self.tabs)
         self.setLayout(main_layout)
         self.setFixedSize(850, 750)
 
-    # ==========================================
-    # GÜNCELLEME SEKME FONKSİYONLARI (MANUEL KONTROL İÇİN)
-    # ==========================================
     def setup_update_tab(self):
         layout = QVBoxLayout()
         
@@ -377,7 +380,6 @@ class DVNM_OSINT_Uygulama(QWidget):
     async def start_download_update(self):
         if not hasattr(self, 'download_url'): return
         
-        # Manuel sekmeden tetiklendiğinde artık "Nereye Kaydedeyim?" demez, otomatik günceller.
         if getattr(sys, 'frozen', False):
             base_dir = os.path.dirname(sys.executable)
             save_path = os.path.join(base_dir, "dvnm_update_temp.exe")
@@ -418,9 +420,6 @@ class DVNM_OSINT_Uygulama(QWidget):
             
         self.btn_download_update.setEnabled(True)
 
-    # ==========================================
-    # TARAMA FONKSİYONLARI (STANDART)
-    # ==========================================
     @asyncSlot()
     async def search_username(self):
         raw_input = self.username_input.text().strip()
@@ -441,6 +440,11 @@ class DVNM_OSINT_Uygulama(QWidget):
         
         self.search_button.setEnabled(True)
         self.result_area.append("<br><span style='color:#1db954;'>[+] Tarama başarıyla tamamlandı.</span>")
+        
+        # YENİ: TARAMA BİTTİĞİNDE VERİLERİ BULUTA GÖNDER
+        if hasattr(self, 'current_user_id') and self.current_user_id:
+            full_results = self.result_area.toPlainText()
+            await self.veriyi_buluta_kaydet(raw_input, full_results, self.current_user_id)
 
     async def run_search(self, username, category):
         sites = [
@@ -508,33 +512,26 @@ class DVNM_OSINT_Uygulama(QWidget):
                 f.write(self.result_area.toPlainText())
             QMessageBox.information(self, "Başarılı", "Rapor kaydedildi.")
 
-# ==========================================
-# ÇALIŞTIRMA KISMI (Supabase Yetkilendirme Entegreli)
-# ==========================================
 if __name__ == '__main__':
-    from auth_ekrani import LoginEkrani # Yazdığımız login ekranını içeri aktarıyoruz
-
     try:
         app = QApplication(sys.argv)
-        # Uygulamanın son pencere kapandığında tamamen kapanmasını önlüyoruz
-        # Çünkü login ekranı kapanınca asıl uygulama açılacak.
         app.setQuitOnLastWindowClosed(False) 
         
-        # 1. ÖNCE LOGIN EKRANINI GÖSTER
         login_penceresi = LoginEkrani()
         login_penceresi.show()
         
-        # Kullanıcı login penceresini kapatana kadar bekle
         app.exec_() 
         
-        # 2. GİRİŞ BAŞARILIYSA ANA UYGULAMAYI BAŞLAT
         if login_penceresi.giris_basarili:
-            app.setQuitOnLastWindowClosed(True) # Normale döndür
+            app.setQuitOnLastWindowClosed(True)
             
             loop = QEventLoop(app)
             asyncio.set_event_loop(loop)
             
             dvnm = DVNM_OSINT_Uygulama()
+            # YENİ: KİMLİĞİ ANA UYGULAMAYA AKTARIYORUZ
+            dvnm.current_user_id = login_penceresi.user_id 
+            
             splash_path = resource_path("load.png")
             splash = CustomSplashScreen(splash_path)
             splash.show()
